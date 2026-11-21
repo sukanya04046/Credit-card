@@ -7,9 +7,9 @@ import joblib
 import shap
 import matplotlib.pyplot as plt
 
-# --------------------------------------------------
+# ==================================================
 # PAGE CONFIGURATION
-# --------------------------------------------------
+# ==================================================
 
 st.set_page_config(
     page_title="SmartGuard | Fraud Detection",
@@ -18,93 +18,177 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --------------------------------------------------
-# LIGHT BLUE THEME
-# --------------------------------------------------
+# ==================================================
+# LIGHT BLUE THEME - TEXT VISIBILITY FIX
+# ==================================================
 
 st.markdown("""
 <style>
+
+/* Main background */
 .stApp {
     background-color: #EAF3F8;
+    color: #263B50;
 }
 
-[data-testid="stHeader"] {
-    background-color: #EAF3F8;
+/* Main headings */
+h1, h2, h3, h4, h5, h6 {
+    color: #17365D !important;
 }
 
+/* Main content text */
+.stApp p,
+.stApp li,
+.stApp label,
+.stMarkdown,
+.stMarkdown p,
+.stMarkdown li {
+    color: #263B50;
+}
+
+/* Sidebar */
 [data-testid="stSidebar"] {
     background-color: #D8EAF4;
 }
 
-[data-testid="stSidebar"] * {
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] div {
     color: #17365D;
 }
 
-h1, h2, h3 {
+/* Header */
+[data-testid="stHeader"] {
+    background-color: #EAF3F8;
+}
+
+/* Metric cards */
+[data-testid="stMetric"] {
+    background-color: #FFFFFF;
+    border: 1px solid #C5DCE9;
+    border-radius: 12px;
+    padding: 18px;
+}
+
+[data-testid="stMetricLabel"],
+[data-testid="stMetricValue"],
+[data-testid="stMetricDelta"] {
     color: #17365D !important;
 }
 
-p, label, span {
-    color: #263B50;
+/* Input boxes */
+.stTextInput input,
+.stNumberInput input,
+.stTextArea textarea {
+    background-color: #FFFFFF !important;
+    color: #17365D !important;
+    border-color: #A9C7D9 !important;
 }
 
+/* Select boxes */
+[data-baseweb="select"] > div {
+    background-color: #FFFFFF !important;
+    color: #17365D !important;
+}
+
+[data-baseweb="select"] * {
+    color: #17365D !important;
+}
+
+/* Buttons */
 .stButton > button {
-    background-color: #0F9D9A;
-    color: white;
-    border: none;
+    background-color: #0F9D9A !important;
+    color: #FFFFFF !important;
+    border: none !important;
     border-radius: 8px;
-    padding: 0.55rem 1.2rem;
     font-weight: 600;
 }
 
 .stButton > button:hover {
-    background-color: #087F7D;
-    color: white;
-    border: none;
+    background-color: #087F7D !important;
+    color: #FFFFFF !important;
 }
 
+/* Download buttons */
 .stDownloadButton > button {
-    background-color: #17365D;
-    color: white;
+    background-color: #17365D !important;
+    color: #FFFFFF !important;
     border-radius: 8px;
 }
 
-[data-testid="stMetric"] {
-    background-color: white;
-    border: 1px solid #D2E3ED;
-    padding: 18px;
+/* Success message */
+.stAlert [data-testid="stNotificationContentSuccess"] {
+    color: #14532D !important;
+}
+
+/* Alert boxes */
+[data-testid="stAlert"] {
+    border-radius: 10px;
+}
+
+/* Forms */
+[data-testid="stForm"] {
+    background-color: #FFFFFF;
+    border: 1px solid #C5DCE9;
     border-radius: 12px;
-}
-
-div[data-testid="stDataFrame"] {
-    background-color: white;
-}
-
-div[data-testid="stForm"] {
-    background-color: white;
     padding: 20px;
-    border-radius: 12px;
-    border: 1px solid #D2E3ED;
 }
 
-hr {
-    border-color: #C5DCE9;
+/* Tabs */
+[data-testid="stTabs"] button {
+    color: #17365D !important;
 }
+
+/* Tables */
+[data-testid="stDataFrame"] {
+    background-color: #FFFFFF;
+}
+
+/* Expanders */
+[data-testid="stExpander"] {
+    background-color: #FFFFFF;
+    border: 1px solid #C5DCE9;
+    border-radius: 10px;
+}
+
+/* Radio buttons */
+.stRadio label {
+    color: #17365D !important;
+}
+
+/* Checkboxes */
+.stCheckbox label {
+    color: #17365D !important;
+}
+
+/* Horizontal line */
+hr {
+    border-color: #C5DCE9 !important;
+}
+
+/* Footer */
+footer {
+    visibility: hidden;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
 
-# --------------------------------------------------
-# LOAD MODEL BUNDLE
-# --------------------------------------------------
+# ==================================================
+# LOAD TRAINED MODEL
+# ==================================================
 
 @st.cache_resource
 def load_model():
+
     bundle = joblib.load("smartguard_model_bundle.pkl")
 
     model = bundle["model"]
     preprocessor = bundle["preprocessor"]
     feature_names = bundle["feature_names"]
+
     thresholds = bundle.get(
         "risk_thresholds",
         {"low": 35, "medium": 70}
@@ -114,16 +198,19 @@ def load_model():
 
 
 try:
+
     model, preprocessor, feature_names, thresholds = load_model()
+
 except Exception as e:
+
     st.error("Unable to load the SmartGuard model.")
     st.exception(e)
     st.stop()
 
 
-# --------------------------------------------------
-# CREATE DEFAULT TRANSACTION
-# --------------------------------------------------
+# ==================================================
+# DEFAULT TRANSACTION
+# ==================================================
 
 def create_default_transaction():
 
@@ -150,12 +237,15 @@ def create_default_transaction():
         for column, value in zip(columns, imputer.statistics_):
             defaults[column] = value
 
-    return pd.DataFrame([defaults], columns=feature_names)
+    return pd.DataFrame(
+        [defaults],
+        columns=feature_names
+    )
 
 
-# --------------------------------------------------
-# PREDICTION FUNCTION
-# --------------------------------------------------
+# ==================================================
+# TRANSACTION ANALYSIS
+# ==================================================
 
 def analyze_transactions(data):
 
@@ -165,16 +255,19 @@ def analyze_transactions(data):
     ]
 
     if missing_columns:
+
         raise ValueError(
-            f"Your CSV is missing {len(missing_columns)} required columns. "
-            f"First missing columns: {missing_columns[:10]}"
+            f"CSV is missing {len(missing_columns)} required columns. "
+            f"Missing examples: {missing_columns[:10]}"
         )
 
     data = data[feature_names].copy()
 
     processed_data = preprocessor.transform(data)
 
-    probabilities = model.predict_proba(processed_data)[:, 1]
+    probabilities = model.predict_proba(
+        processed_data
+    )[:, 1]
 
     results = data.copy()
 
@@ -202,9 +295,9 @@ def analyze_transactions(data):
     return results, processed_data, probabilities
 
 
-# --------------------------------------------------
+# ==================================================
 # SESSION STATE
-# --------------------------------------------------
+# ==================================================
 
 if "results" not in st.session_state:
     st.session_state.results = None
@@ -216,12 +309,15 @@ if "probabilities" not in st.session_state:
     st.session_state.probabilities = None
 
 
-# --------------------------------------------------
-# SIDEBAR NAVIGATION
-# --------------------------------------------------
+# ==================================================
+# SIDEBAR
+# ==================================================
 
 st.sidebar.title("🛡️ SmartGuard")
-st.sidebar.caption("Intelligent Credit Card Fraud Detection")
+
+st.sidebar.caption(
+    "Intelligent Credit Card Fraud Detection"
+)
 
 page = st.sidebar.radio(
     "Navigation",
@@ -234,9 +330,10 @@ page = st.sidebar.radio(
 )
 
 st.sidebar.divider()
+
 st.sidebar.info(
-    "SmartGuard uses a trained XGBoost model "
-    "to estimate transaction fraud risk."
+    "SmartGuard uses machine learning to estimate "
+    "the risk of potentially fraudulent transactions."
 )
 
 
@@ -247,20 +344,35 @@ st.sidebar.info(
 if page == "Home":
 
     st.title("🛡️ SmartGuard")
-    st.subheader("Intelligent Credit Card Fraud Detection")
 
-    st.markdown("""
-    SmartGuard analyses transaction patterns using machine learning
-    to identify potentially fraudulent credit card transactions.
-    """)
+    st.subheader(
+        "Intelligent Credit Card Fraud Detection System"
+    )
+
+    st.write(
+        "SmartGuard analyses transaction patterns using "
+        "machine learning to identify potentially fraudulent "
+        "credit card transactions."
+    )
 
     st.divider()
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Dataset Transactions", "590,540")
-    col2.metric("Selected Model", "XGBoost")
-    col3.metric("Input Features", "423")
+    col1.metric(
+        "Dataset Transactions",
+        "590,540"
+    )
+
+    col2.metric(
+        "Selected Model",
+        "XGBoost"
+    )
+
+    col3.metric(
+        "Input Features",
+        "423"
+    )
 
     st.divider()
 
@@ -269,16 +381,29 @@ if page == "Home":
     c1, c2, c3 = st.columns(3)
 
     with c1:
+
         st.markdown("### 1. Input")
-        st.write("Enter transaction details or upload a CSV file.")
+
+        st.write(
+            "Enter transaction details or upload a CSV file."
+        )
 
     with c2:
+
         st.markdown("### 2. Analysis")
-        st.write("The trained model analyses transaction patterns.")
+
+        st.write(
+            "The trained machine learning model analyses "
+            "transaction patterns."
+        )
 
     with c3:
+
         st.markdown("### 3. Result")
-        st.write("View the estimated fraud probability and risk level.")
+
+        st.write(
+            "View estimated fraud probability and risk level."
+        )
 
     st.divider()
 
@@ -286,24 +411,62 @@ if page == "Home":
 
     r1, r2, r3 = st.columns(3)
 
-    r1.success("LOW RISK\n\nScore below 35")
-    r2.warning("MEDIUM RISK\n\nScore from 35 to below 70")
-    r3.error("HIGH RISK\n\nScore of 70 or above")
+    with r1:
+
+        st.markdown("""
+        <div style="
+            background-color:#DDF3E4;
+            padding:20px;
+            border-radius:12px;
+            border:1px solid #9ACDA9;">
+            <h3 style="color:#14532D;">LOW RISK</h3>
+            <p style="color:#14532D;">Score below 35</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with r2:
+
+        st.markdown("""
+        <div style="
+            background-color:#FFF1CC;
+            padding:20px;
+            border-radius:12px;
+            border:1px solid #E8CA80;">
+            <h3 style="color:#754C00;">MEDIUM RISK</h3>
+            <p style="color:#754C00;">Score from 35 to below 70</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with r3:
+
+        st.markdown("""
+        <div style="
+            background-color:#FCE1E1;
+            padding:20px;
+            border-radius:12px;
+            border:1px solid #E5AAAA;">
+            <h3 style="color:#991B1B;">HIGH RISK</h3>
+            <p style="color:#991B1B;">Score of 70 or above</p>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.caption(
-        "Risk thresholds are configurable demonstration thresholds, "
-        "not proof that a transaction is fraudulent."
+        "These are demonstration thresholds. "
+        "A high risk score does not prove fraud."
     )
 
 
 # ==================================================
-# TRANSACTION DETECTION PAGE
+# TRANSACTION DETECTION
 # ==================================================
 
 elif page == "Transaction Detection":
 
     st.title("Transaction Detection")
-    st.write("Predict the estimated fraud risk of a transaction.")
+
+    st.write(
+        "Predict the estimated fraud risk of a transaction."
+    )
 
     tab1, tab2 = st.tabs([
         "Manual Transaction Entry",
@@ -319,9 +482,9 @@ elif page == "Transaction Detection":
         st.subheader("Enter Transaction Details")
 
         st.info(
-            "For this demonstration, the four entered fields are "
-            "combined with default values for the remaining model "
-            "features. This is an approximate prediction, not a "
+            "The four entered fields are combined with default "
+            "values for the remaining model features. This is "
+            "an approximate demonstration prediction, not a "
             "complete real-world transaction assessment."
         )
 
@@ -341,7 +504,12 @@ elif page == "Transaction Detection":
 
             card4 = st.selectbox(
                 "Card Network",
-                ["visa", "mastercard", "discover", "american express"]
+                [
+                    "visa",
+                    "mastercard",
+                    "discover",
+                    "american express"
+                ]
             )
 
             card6 = st.selectbox(
@@ -371,8 +539,9 @@ elif page == "Transaction Detection":
                 manual_data.loc[0, "card6"] = card6
 
             try:
-                results, processed, probabilities = analyze_transactions(
-                    manual_data
+
+                results, processed, probabilities = (
+                    analyze_transactions(manual_data)
                 )
 
                 st.session_state.results = results
@@ -382,17 +551,26 @@ elif page == "Transaction Detection":
                 score = float(probabilities[0] * 100)
 
                 st.divider()
+
                 st.subheader("Prediction Result")
 
                 a, b = st.columns(2)
 
-                a.metric("Fraud Probability", f"{score:.2f}%")
+                a.metric(
+                    "Fraud Probability",
+                    f"{score:.2f}%"
+                )
 
                 if score < thresholds["low"]:
+
                     b.success("LOW RISK")
+
                 elif score < thresholds["medium"]:
+
                     b.warning("MEDIUM RISK")
+
                 else:
+
                     b.error("HIGH RISK")
 
                 st.write(
@@ -401,7 +579,9 @@ elif page == "Transaction Detection":
                 )
 
             except Exception as e:
+
                 st.error("Prediction could not be completed.")
+
                 st.exception(e)
 
     # ----------------------------------------------
@@ -413,16 +593,16 @@ elif page == "Transaction Detection":
         st.subheader("Upload Transaction CSV")
 
         st.write(
-            "Upload a CSV containing all 423 model input features. "
-            "Do not include the target column isFraud."
+            "Upload a CSV containing all 423 model input "
+            "features. Do not include the target column isFraud."
         )
 
-        # Download sample CSV
         if os.path.exists("transaction.csv"):
 
             with open("transaction.csv", "rb") as file:
+
                 st.download_button(
-                    label="Download Sample Transaction CSV",
+                    "Download Sample Transaction CSV",
                     data=file,
                     file_name="transaction.csv",
                     mime="text/csv"
@@ -433,7 +613,7 @@ elif page == "Transaction Detection":
             sample = create_default_transaction()
 
             st.download_button(
-                label="Download Sample CSV Template",
+                "Download Sample CSV Template",
                 data=sample.to_csv(index=False).encode("utf-8"),
                 file_name="transaction_template.csv",
                 mime="text/csv"
@@ -447,9 +627,11 @@ elif page == "Transaction Detection":
         if uploaded_file is not None:
 
             try:
+
                 uploaded_data = pd.read_csv(uploaded_file)
 
-                st.write("Uploaded data preview")
+                st.write("Uploaded Data Preview")
+
                 st.dataframe(
                     uploaded_data.head(),
                     use_container_width=True
@@ -460,15 +642,17 @@ elif page == "Transaction Detection":
                     use_container_width=True
                 ):
 
-                    results, processed, probabilities = analyze_transactions(
-                        uploaded_data
+                    results, processed, probabilities = (
+                        analyze_transactions(uploaded_data)
                     )
 
                     st.session_state.results = results
                     st.session_state.processed_data = processed
                     st.session_state.probabilities = probabilities
 
-                    st.success("Transaction analysis completed!")
+                    st.success(
+                        "Transaction analysis completed!"
+                    )
 
                     st.subheader("Prediction Results")
 
@@ -484,7 +668,9 @@ elif page == "Transaction Detection":
                         use_container_width=True
                     )
 
-                    csv_data = results.to_csv(index=False).encode("utf-8")
+                    csv_data = results.to_csv(
+                        index=False
+                    ).encode("utf-8")
 
                     st.download_button(
                         "Download Prediction Results",
@@ -508,17 +694,20 @@ elif page == "Transaction Detection":
                     )
 
             except Exception as e:
+
                 st.error("Unable to process this CSV file.")
+
                 st.exception(e)
 
 
 # ==================================================
-# RISK ANALYSIS PAGE
+# RISK ANALYSIS
 # ==================================================
 
 elif page == "Risk Analysis":
 
     st.title("Risk Analysis")
+
     st.write(
         "Explore transaction risk scores and model explanations."
     )
@@ -526,14 +715,14 @@ elif page == "Risk Analysis":
     if st.session_state.results is None:
 
         st.info(
-            "First analyze a transaction using the Transaction Detection page."
+            "First analyze a transaction using the "
+            "Transaction Detection page."
         )
 
     else:
 
         results = st.session_state.results
         processed = st.session_state.processed_data
-        probabilities = st.session_state.probabilities
 
         st.subheader("Transaction Risk Summary")
 
@@ -556,10 +745,11 @@ elif page == "Risk Analysis":
         )
 
         st.divider()
+
         st.subheader("SHAP-Based Explanation")
 
         st.write(
-            "SHAP helps explain which model features contributed "
+            "SHAP explains which model features contributed "
             "to the selected prediction."
         )
 
@@ -572,23 +762,36 @@ elif page == "Risk Analysis":
             if hasattr(selected_row, "toarray"):
                 selected_row = selected_row.toarray()
 
-            shap_values = explainer.shap_values(selected_row)
+            shap_values = explainer.shap_values(
+                selected_row
+            )
 
             if isinstance(shap_values, list):
-                values = np.asarray(shap_values[-1]).reshape(-1)
+
+                values = np.asarray(
+                    shap_values[-1]
+                ).reshape(-1)
+
             else:
+
                 values = np.asarray(shap_values)
 
                 if values.ndim == 3:
                     values = values[0, :, -1]
+
                 elif values.ndim == 2:
                     values = values[0]
 
                 values = values.reshape(-1)
 
             try:
-                transformed_names = preprocessor.get_feature_names_out()
+
+                transformed_names = (
+                    preprocessor.get_feature_names_out()
+                )
+
             except Exception:
+
                 transformed_names = [
                     f"Feature {i + 1}"
                     for i in range(len(values))
@@ -619,9 +822,11 @@ elif page == "Risk Analysis":
 
             ax.set_xlabel("SHAP Value")
             ax.set_title("Top Feature Contributions")
+
             fig.tight_layout()
 
             st.pyplot(fig)
+
             plt.close(fig)
 
             st.caption(
@@ -630,14 +835,16 @@ elif page == "Risk Analysis":
             )
 
         except Exception as e:
+
             st.warning(
-                "SHAP explanation could not be generated for this prediction."
+                "SHAP explanation could not be generated."
             )
+
             st.exception(e)
 
 
 # ==================================================
-# MODEL INFORMATION PAGE
+# MODEL INFORMATION
 # ==================================================
 
 elif page == "Model Information":
@@ -649,8 +856,8 @@ elif page == "Model Information":
     st.success("Tuned XGBoost Classifier")
 
     st.write(
-        "SmartGuard uses a trained XGBoost model with a saved "
-        "preprocessing pipeline."
+        "SmartGuard uses a trained XGBoost model with "
+        "a saved preprocessing pipeline."
     )
 
     st.divider()
@@ -666,6 +873,7 @@ elif page == "Model Information":
             "ROC-AUC",
             "PR-AUC"
         ],
+
         "Tuned XGBoost": [
             0.9508,
             0.2841,
@@ -676,12 +884,15 @@ elif page == "Model Information":
         ]
     })
 
-    st.dataframe(metrics, use_container_width=True)
+    st.dataframe(
+        metrics,
+        use_container_width=True
+    )
 
     st.caption(
-        "These are preliminary development-sample results, not "
-        "a full-data benchmark. Performance depends on the "
-        "validation sample and decision threshold."
+        "These are preliminary development-sample results, "
+        "not a full-data benchmark. Performance depends on "
+        "the validation sample and decision threshold."
     )
 
     st.divider()
@@ -713,8 +924,9 @@ elif page == "Model Information":
     )
 
     st.warning(
-        "These amounts represent transaction values in the evaluation "
-        "sample, not confirmed financial losses or recovered amounts."
+        "These amounts represent transaction values in the "
+        "evaluation sample, not confirmed financial losses "
+        "or recovered amounts."
     )
 
     st.divider()
@@ -743,15 +955,21 @@ elif page == "Model Information":
     """)
 
 
-# --------------------------------------------------
+# ==================================================
 # FOOTER
-# --------------------------------------------------
+# ==================================================
 
 st.divider()
 
-st.markdown(
-    "<div style='text-align:center; color:#526B80;'>"
-    "SmartGuard | Intelligent Credit Card Fraud Detection System"
-    "</div>",
-    unsafe_allow_html=True
-)
+st.markdown("""
+<div style="
+    background-color:#D8EAF4;
+    padding:15px;
+    border-radius:10px;
+    text-align:center;
+    color:#17365D;
+">
+    <strong>SmartGuard</strong><br>
+    Intelligent Credit Card Fraud Detection System
+</div>
+""", unsafe_allow_html=True)
