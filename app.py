@@ -152,7 +152,7 @@ footer {
 
 
 # ==================================================
-# REUSABLE COLORED INFORMATION CARDS
+# REUSABLE INFORMATION CARDS
 # ==================================================
 
 def info_card(message):
@@ -222,6 +222,23 @@ def risk_card(level, description, background, text_color, border_color):
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+
+# ==================================================
+# DISPLAY HELPERS
+# ==================================================
+
+def format_amount(value):
+    if pd.isna(value):
+        return "Not available"
+
+    return f"{float(value):,.2f}"
+
+
+def get_exposure_total(results):
+    return float(
+        results["Expected Financial Exposure"].fillna(0).sum()
+    )
 
 
 # ==================================================
@@ -308,22 +325,44 @@ def analyze_transactions(data):
 
     data = data[feature_names].copy()
 
+    # Get transaction amount before preprocessing
+    if "TransactionAmt" in data.columns:
+        transaction_amounts = pd.to_numeric(
+            data["TransactionAmt"],
+            errors="coerce"
+        )
+    else:
+        transaction_amounts = pd.Series(
+            np.nan,
+            index=data.index
+        )
+
+    # Transform input data
     processed_data = preprocessor.transform(data)
 
+    # Predict fraud probabilities
     probabilities = model.predict_proba(
         processed_data
     )[:, 1]
 
     results = data.copy()
 
+    # Transaction amount
+    results["Transaction Amount"] = (
+        transaction_amounts.to_numpy()
+    )
+
+    # Fraud probability
     results["Fraud Probability (%)"] = np.round(
         probabilities * 100, 2
     )
 
+    # Risk score out of 100
     results["Risk Score"] = np.round(
         probabilities * 100, 2
     )
 
+    # Risk classification
     results["Risk Level"] = [
         "Low" if score < thresholds["low"]
         else "Medium" if score < thresholds["medium"]
@@ -331,11 +370,22 @@ def analyze_transactions(data):
         for score in probabilities * 100
     ]
 
+    # Model prediction
     results["Prediction"] = [
         "Potential Fraud" if probability >= 0.5
         else "Likely Genuine"
         for probability in probabilities
     ]
+
+    # Expected financial exposure:
+    # Fraud probability x transaction amount
+    results["Expected Financial Exposure"] = (
+        probabilities * transaction_amounts.to_numpy()
+    )
+
+    results["Expected Financial Exposure"] = (
+        results["Expected Financial Exposure"].round(2)
+    )
 
     return results, processed_data, probabilities
 
@@ -433,7 +483,10 @@ if page == "Home":
 
     with c3:
         st.markdown("### 3. Result")
-        st.write("View the estimated fraud probability and risk level.")
+        st.write(
+            "View fraud probability, risk score, risk level "
+            "and expected financial exposure."
+        )
 
     st.divider()
 
@@ -483,7 +536,8 @@ elif page == "Transaction Detection":
     st.title("Transaction Detection")
 
     st.write(
-        "Predict the estimated fraud risk of a transaction."
+        "Predict the estimated fraud risk and expected "
+        "financial exposure of a transaction."
     )
 
     tab1, tab2 = st.tabs([
@@ -567,13 +621,19 @@ elif page == "Transaction Detection":
                 st.session_state.probabilities = probabilities
 
                 score = float(probabilities[0] * 100)
+                exposure = float(
+                    results.iloc[0]["Expected Financial Exposure"]
+                )
 
                 st.divider()
                 st.subheader("Prediction Result")
 
                 a, b = st.columns(2)
 
-                a.metric("Fraud Probability", f"{score:.2f}%")
+                a.metric(
+                    "Fraud Probability",
+                    f"{score:.2f}%"
+                )
 
                 if score < thresholds["low"]:
                     b.success("LOW RISK")
@@ -587,6 +647,38 @@ elif page == "Transaction Detection":
                 st.write(
                     "Model prediction:",
                     results.iloc[0]["Prediction"]
+                )
+
+                st.divider()
+
+                st.subheader("Transaction Financial Analysis")
+
+                col1, col2 = st.columns(2)
+
+                col1.metric(
+                    "Transaction Amount",
+                    format_amount(amount)
+                )
+
+                col2.metric(
+                    "Risk Score",
+                    f"{score:.2f}/100"
+                )
+
+                st.metric(
+                    "Expected Financial Exposure",
+                    format_amount(exposure)
+                )
+
+                info_card(
+                    f"Calculation: {score:.2f}% fraud probability "
+                    f"× transaction amount {format_amount(amount)} "
+                    f"= expected exposure {format_amount(exposure)}."
+                )
+
+                warning_card(
+                    "Expected financial exposure is a probability-based "
+                    "estimate, not confirmed financial loss."
                 )
 
             except Exception as e:
@@ -603,7 +695,9 @@ elif page == "Transaction Detection":
 
         info_card(
             "Upload a CSV containing all 423 model input features. "
-            "Do not include the target column isFraud."
+            "Do not include the target column isFraud. The CSV must "
+            "contain TransactionAmt to calculate transaction-wise "
+            "financial exposure."
         )
 
         if os.path.exists("transaction.csv"):
@@ -661,41 +755,62 @@ elif page == "Transaction Detection":
 
                     st.success("Transaction analysis completed!")
 
-                    st.subheader("Prediction Results")
+                    st.subheader("Transaction-wise Prediction Results")
+
+                    display_columns = [
+                        "Transaction Amount",
+                        "Fraud Probability (%)",
+                        "Risk Score",
+                        "Risk Level",
+                        "Prediction",
+                        "Expected Financial Exposure"
+                    ]
 
                     st.dataframe(
-                        results[
-                            [
-                                "Fraud Probability (%)",
-                                "Risk Score",
-                                "Risk Level",
-                                "Prediction"
-                            ]
-                        ],
+                        results[display_columns],
                         use_container_width=True
                     )
 
-                    csv_data = results.to_csv(index=False).encode("utf-8")
+                    # Expected exposure summary
+                    total_exposure = get_exposure_total(results)
+
+                    st.divider()
+
+                    st.subheader("Financial Exposure Summary")
+
+                    col1, col2, col3 = st.columns(3)
+
+                    col1.metric(
+                        "Transactions Analyzed",
+                        len(results)
+                    )
+
+                    col2.metric(
+                        "High-Risk Transactions",
+                        int((results["Risk Level"] == "High").sum())
+                    )
+
+                    col3.metric(
+                        "Total Expected Exposure",
+                        format_amount(total_exposure)
+                    )
+
+                    info_card(
+                        "Total expected exposure is calculated by adding "
+                        "the expected financial exposure of every analyzed "
+                        "transaction."
+                    )
+
+                    # Download results
+                    csv_data = results.to_csv(
+                        index=False
+                    ).encode("utf-8")
 
                     st.download_button(
                         "Download Prediction Results",
                         data=csv_data,
                         file_name="smartguard_predictions.csv",
                         mime="text/csv"
-                    )
-
-                    st.metric(
-                        "Transactions Analyzed",
-                        len(results)
-                    )
-
-                    high_risk = (
-                        results["Risk Level"] == "High"
-                    ).sum()
-
-                    st.metric(
-                        "High-Risk Transactions",
-                        int(high_risk)
                     )
 
             except Exception as e:
@@ -712,7 +827,8 @@ elif page == "Risk Analysis":
     st.title("Risk Analysis")
 
     st.write(
-        "Explore transaction risk scores and model explanations."
+        "Explore transaction risk scores, expected financial "
+        "exposure and model explanations."
     )
 
     if st.session_state.results is None:
@@ -729,22 +845,83 @@ elif page == "Risk Analysis":
 
         st.subheader("Transaction Risk Summary")
 
+        display_columns = [
+            "Transaction Amount",
+            "Fraud Probability (%)",
+            "Risk Score",
+            "Risk Level",
+            "Prediction",
+            "Expected Financial Exposure"
+        ]
+
         st.dataframe(
-            results[
-                [
-                    "Fraud Probability (%)",
-                    "Risk Score",
-                    "Risk Level",
-                    "Prediction"
-                ]
-            ],
+            results[display_columns],
             use_container_width=True
         )
+
+        # Overall exposure
+        st.subheader("Expected Financial Exposure Summary")
+
+        total_exposure = get_exposure_total(results)
+
+        col1, col2 = st.columns(2)
+
+        col1.metric(
+            "Transactions Analyzed",
+            len(results)
+        )
+
+        col2.metric(
+            "Total Expected Exposure",
+            format_amount(total_exposure)
+        )
+
+        st.divider()
 
         selected_index = st.selectbox(
             "Select transaction for explanation",
             range(len(results)),
             format_func=lambda x: f"Transaction {x + 1}"
+        )
+
+        selected_result = results.iloc[selected_index]
+
+        st.subheader("Selected Transaction Details")
+
+        col1, col2 = st.columns(2)
+
+        col1.metric(
+            "Fraud Probability",
+            f"{selected_result['Fraud Probability (%)']:.2f}%"
+        )
+
+        col2.metric(
+            "Risk Score",
+            f"{selected_result['Risk Score']:.2f}/100"
+        )
+
+        col3, col4 = st.columns(2)
+
+        col3.metric(
+            "Transaction Amount",
+            format_amount(selected_result["Transaction Amount"])
+        )
+
+        col4.metric(
+            "Expected Financial Exposure",
+            format_amount(
+                selected_result["Expected Financial Exposure"]
+            )
+        )
+
+        st.write(
+            "Risk Level:",
+            selected_result["Risk Level"]
+        )
+
+        st.write(
+            "Model Prediction:",
+            selected_result["Prediction"]
         )
 
         st.divider()
@@ -923,7 +1100,19 @@ elif page == "Model Information":
     warning_card(
         "These amounts represent transaction values in the "
         "evaluation sample, not confirmed financial losses "
-        "or recovered amounts."
+        "or recovered amounts. They are separate from the "
+        "transaction-wise expected exposure calculated during prediction."
+    )
+
+    st.divider()
+
+    st.subheader("Transaction-wise Expected Financial Exposure")
+
+    info_card(
+        "For every transaction, SmartGuard calculates expected "
+        "financial exposure by multiplying the model's fraud "
+        "probability by the transaction amount. The exposure "
+        "estimates are also added together for CSV analysis."
     )
 
     st.divider()
@@ -934,8 +1123,8 @@ elif page == "Model Information":
         "SmartGuard includes machine-learning-based fraud prediction, "
         "intelligent risk scoring from 0 to 100, Low/Medium/High risk "
         "classification, CSV batch transaction analysis, SHAP-based "
-        "model explanations, financial exposure estimation and "
-        "manual transaction prediction."
+        "model explanations, transaction-wise expected financial "
+        "exposure, total expected exposure and manual transaction prediction."
     )
 
     st.divider()
@@ -945,8 +1134,10 @@ elif page == "Model Information":
     warning_card(
         "A high risk score does not prove fraud. Manual predictions "
         "use default values for fields not entered. The model's "
-        "performance figures are preliminary. Financial exposure "
-        "is an estimate based on missed-fraud transaction values."
+        "performance figures are preliminary. Expected financial "
+        "exposure is a probability-based estimate, not confirmed loss. "
+        "Its reliability depends on the calibration of the model's "
+        "fraud probabilities."
     )
 
 
