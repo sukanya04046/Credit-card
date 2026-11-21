@@ -4,6 +4,6 @@ numpy
 scikit-learn==1.6.1
 scipy
 joblib
-xgboost==3.1.2
+xgboost==3.4.1
 shap
 matplotlib
