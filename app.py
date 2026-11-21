@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -34,16 +35,100 @@ def load_model():
 try:
     model, preprocessor, feature_names, thresholds = load_model()
 except Exception as e:
-    st.error(f"Unable to load the trained model: {e}")
+    st.error(f"Model loading failed: {e}")
     st.stop()
 
 # --------------------------------------------------
-# 3. APPLICATION DESIGN
+# 3. PREPARE DEFAULT VALUES FOR MANUAL ENTRY
+# --------------------------------------------------
+
+def create_default_transaction():
+
+    defaults = {}
+
+    for name, transformer, columns in preprocessor.transformers_:
+
+        if name == "remainder" or transformer == "drop":
+            continue
+
+        if name == "num":
+            imputer = transformer.named_steps["imputer"]
+
+        elif name == "cat":
+            imputer = transformer.named_steps["imputer"]
+
+        else:
+            continue
+
+        for column, value in zip(columns, imputer.statistics_):
+            defaults[column] = value
+
+    row = {
+        column: defaults.get(column, np.nan)
+        for column in feature_names
+    }
+
+    return pd.DataFrame([row], columns=feature_names)
+
+
+# --------------------------------------------------
+# 4. COMMON PREDICTION FUNCTION
+# --------------------------------------------------
+
+def analyze_transactions(data):
+
+    missing = [
+        col for col in feature_names
+        if col not in data.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            f"CSV is missing {len(missing)} required features. "
+            f"Examples: {missing[:10]}"
+        )
+
+    input_data = data[feature_names].copy()
+
+    processed_data = preprocessor.transform(input_data)
+
+    probabilities = model.predict_proba(processed_data)[:, 1]
+
+    predictions = model.predict(processed_data)
+
+    scores = np.round(probabilities * 100, 2)
+
+    risk_levels = []
+
+    for score in scores:
+        if score < thresholds["low"]:
+            risk_levels.append("Low")
+        elif score < thresholds["medium"]:
+            risk_levels.append("Medium")
+        else:
+            risk_levels.append("High")
+
+    results = data.copy()
+
+    results["Fraud Probability (%)"] = scores
+    results["Risk Score"] = scores
+    results["Risk Level"] = risk_levels
+    results["Prediction"] = np.where(
+        predictions == 1,
+        "Potential Fraud",
+        "Likely Genuine"
+    )
+
+    return results, processed_data
+
+
+# --------------------------------------------------
+# 5. APPLICATION DESIGN
 # --------------------------------------------------
 
 st.markdown("""
 <style>
-.main {
+.stApp {
     background-color: #F7F9FC;
 }
 h1, h2, h3 {
@@ -66,60 +151,7 @@ page = st.sidebar.radio(
 )
 
 # --------------------------------------------------
-# 4. COMMON PREDICTION FUNCTION
-# --------------------------------------------------
-
-def analyze_transactions(data):
-
-    # Keep the same feature order used during training
-    missing = [
-        col for col in feature_names
-        if col not in data.columns
-    ]
-
-    if missing:
-        raise ValueError(
-            f"Missing {len(missing)} required features. "
-            f"Examples: {missing[:10]}"
-        )
-
-    input_data = data[feature_names].copy()
-
-    # Apply saved preprocessing
-    processed_data = preprocessor.transform(input_data)
-
-    # Predict fraud probability
-    probabilities = model.predict_proba(processed_data)[:, 1]
-
-    predictions = model.predict(processed_data)
-
-    # Intelligent risk scoring
-    scores = np.round(probabilities * 100, 2)
-
-    risk_levels = []
-
-    for score in scores:
-        if score < thresholds["low"]:
-            risk_levels.append("Low")
-        elif score < thresholds["medium"]:
-            risk_levels.append("Medium")
-        else:
-            risk_levels.append("High")
-
-    results = data.copy()
-
-    results["Fraud Probability (%)"] = scores
-    results["Risk Score"] = scores
-    results["Risk Level"] = risk_levels
-    results["Prediction"] = np.where(
-        predictions == 1, "Fraud", "Genuine"
-    )
-
-    return results, processed_data
-
-
-# --------------------------------------------------
-# 5. HOME PAGE
+# 6. HOME PAGE
 # --------------------------------------------------
 
 if page == "Home":
@@ -138,24 +170,41 @@ if page == "Home":
 
     col1.metric("Dataset Transactions", "590,540")
     col2.metric("Selected Model", "Tuned XGBoost")
-    col3.metric("Input Features", "423")
+    col3.metric("Model Input Features", "423")
 
-    st.subheader("Project Features")
+    st.subheader("SmartGuard Features")
 
-    st.markdown("""
-    - **Fraud Detection:** Predicts whether a transaction is potentially fraudulent.
-    - **SHAP Explanations:** Explains important factors behind model predictions.
-    - **Intelligent Risk Scoring:** Converts fraud probability into a score from 0 to 100.
-    - **Financial Loss Estimation:** Estimates the transaction amount associated with missed fraud.
-    """)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        **🔍 Fraud Detection**
+
+        Predicts whether a transaction may be fraudulent.
+
+        **📊 Intelligent Risk Scoring**
+
+        Converts predicted fraud probability into a score from 0 to 100.
+        """)
+
+    with col2:
+        st.markdown("""
+        **🧠 SHAP Explanation**
+
+        Explains the important factors influencing a prediction.
+
+        **💰 Financial Loss Estimation**
+
+        Estimates the transaction value associated with missed fraud.
+        """)
 
     st.info(
-        "SmartGuard provides decision support. Its predictions are "
-        "not proof that a transaction is fraudulent."
+        "SmartGuard is a machine-learning decision-support demonstration. "
+        "Its predictions are not proof of fraud."
     )
 
 # --------------------------------------------------
-# 6. TRANSACTION DETECTION PAGE
+# 7. TRANSACTION DETECTION PAGE
 # --------------------------------------------------
 
 elif page == "Transaction Detection":
@@ -163,27 +212,184 @@ elif page == "Transaction Detection":
     st.title("Transaction Detection")
 
     st.write(
-        "Upload a CSV file containing the transaction features "
-        "required by the trained model."
+        "Enter a transaction manually or upload a CSV file "
+        "to receive a fraud prediction."
     )
 
-    uploaded_file = st.file_uploader(
-        "Upload transaction CSV",
-        type=["csv"],
-        key="transaction_upload"
-    )
+    manual_tab, upload_tab = st.tabs([
+        "✍️ Manual Transaction Entry",
+        "📁 Upload CSV"
+    ])
 
-    if uploaded_file is not None:
+    # ----------------------------------------------
+    # A. MANUAL TRANSACTION ENTRY
+    # ----------------------------------------------
 
-        try:
-            uploaded_data = pd.read_csv(uploaded_file)
+    with manual_tab:
 
-            st.write("Uploaded data preview")
-            st.dataframe(uploaded_data.head())
+        st.subheader("Enter Transaction Details")
 
-            if st.button("Analyze Transactions"):
+        st.caption(
+            "The model requires 423 input features. This simplified "
+            "form fills the other features using training-data "
+            "imputation defaults. Its result is an approximate "
+            "demonstration, not a full transaction assessment."
+        )
 
-                with st.spinner("Analyzing transactions..."):
+        with st.form("manual_transaction_form"):
+
+            amount = st.number_input(
+                "Transaction Amount",
+                min_value=0.01,
+                value=100.0,
+                step=10.0
+            )
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                product = st.selectbox(
+                    "Product Type",
+                    ["W", "C", "R", "H", "S"]
+                )
+
+            with col2:
+                card_type = st.selectbox(
+                    "Card Network",
+                    [
+                        "visa",
+                        "mastercard",
+                        "american express",
+                        "discover"
+                    ]
+                )
+
+            card_category = st.selectbox(
+                "Card Category",
+                ["debit", "credit", "charge"]
+            )
+
+            submitted = st.form_submit_button(
+                "Predict Fraud Risk",
+                use_container_width=True
+            )
+
+        if submitted:
+
+            try:
+                manual_data = create_default_transaction()
+
+                if "TransactionAmt" in manual_data.columns:
+                    manual_data.loc[0, "TransactionAmt"] = amount
+
+                if "ProductCD" in manual_data.columns:
+                    manual_data.loc[0, "ProductCD"] = product
+
+                if "card4" in manual_data.columns:
+                    manual_data.loc[0, "card4"] = card_type
+
+                if "card6" in manual_data.columns:
+                    manual_data.loc[0, "card6"] = card_category
+
+                results, processed_data = analyze_transactions(
+                    manual_data
+                )
+
+                st.session_state["results"] = results
+                st.session_state["processed_data"] = processed_data
+                st.session_state["original_data"] = manual_data
+
+                result = results.iloc[0]
+
+                st.divider()
+                st.subheader("Transaction Prediction")
+
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric(
+                    "Fraud Probability",
+                    f"{result['Fraud Probability (%)']}%"
+                )
+
+                col2.metric(
+                    "Risk Score",
+                    f"{result['Risk Score']}/100"
+                )
+
+                col3.metric(
+                    "Risk Level",
+                    result["Risk Level"]
+                )
+
+                if result["Prediction"] == "Potential Fraud":
+                    st.error("The model predicts potential fraud.")
+                else:
+                    st.success("The model predicts a likely genuine transaction.")
+
+                st.warning(
+                    "This prediction uses default values for the other "
+                    "model features. It is for demonstration only."
+                )
+
+            except Exception as e:
+                st.error(f"Prediction error: {e}")
+
+    # ----------------------------------------------
+    # B. CSV UPLOAD
+    # ----------------------------------------------
+
+    with upload_tab:
+
+        st.subheader("Upload Transaction CSV")
+
+        sample_path = Path("transaction.csv")
+
+        if sample_path.exists():
+
+            sample_data = sample_path.read_bytes()
+
+            st.download_button(
+                "⬇️ Download Sample transaction.csv",
+                data=sample_data,
+                file_name="transaction.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        else:
+
+            st.info(
+                "The original sample transaction.csv has not yet "
+                "been added to the GitHub repository."
+            )
+
+            template = create_default_transaction()
+
+            template_csv = template.to_csv(index=False).encode("utf-8")
+
+            st.download_button(
+                "⬇️ Download Sample CSV Template",
+                data=template_csv,
+                file_name="transaction_template.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        uploaded_file = st.file_uploader(
+            "Choose a transaction CSV file",
+            type=["csv"],
+            key="transaction_upload"
+        )
+
+        if uploaded_file is not None:
+
+            try:
+                uploaded_data = pd.read_csv(uploaded_file)
+
+                st.write("Uploaded transaction preview")
+                st.dataframe(uploaded_data.head())
+
+                if st.button("Analyze Uploaded Transactions"):
 
                     results, processed_data = analyze_transactions(
                         uploaded_data
@@ -193,45 +399,52 @@ elif page == "Transaction Detection":
                     st.session_state["processed_data"] = processed_data
                     st.session_state["original_data"] = uploaded_data
 
-                st.success("Transaction analysis completed!")
+                    st.success("Transaction analysis completed!")
 
-                fraud_count = (
-                    results["Prediction"] == "Fraud"
-                ).sum()
+                    col1, col2, col3 = st.columns(3)
 
-                genuine_count = (
-                    results["Prediction"] == "Genuine"
-                ).sum()
+                    col1.metric(
+                        "Total Transactions",
+                        len(results)
+                    )
 
-                col1, col2, col3 = st.columns(3)
+                    col2.metric(
+                        "Potential Fraud",
+                        int((results["Prediction"] == "Potential Fraud").sum())
+                    )
 
-                col1.metric("Total Transactions", len(results))
-                col2.metric("Potential Fraud", int(fraud_count))
-                col3.metric("Genuine Predictions", int(genuine_count))
+                    col3.metric(
+                        "Likely Genuine",
+                        int((results["Prediction"] == "Likely Genuine").sum())
+                    )
 
-                st.subheader("Prediction Results")
+                    st.subheader("Prediction Results")
 
-                st.dataframe(results, use_container_width=True)
+                    st.dataframe(
+                        results,
+                        use_container_width=True
+                    )
 
-                csv = results.to_csv(index=False).encode("utf-8")
+                    csv = results.to_csv(index=False).encode("utf-8")
 
-                st.download_button(
-                    "Download Prediction Results",
-                    data=csv,
-                    file_name="smartguard_predictions.csv",
-                    mime="text/csv"
-                )
+                    st.download_button(
+                        "Download Prediction Results",
+                        data=csv,
+                        file_name="smartguard_predictions.csv",
+                        mime="text/csv"
+                    )
 
-        except Exception as e:
-            st.error(f"Analysis error: {e}")
+            except Exception as e:
+                st.error(f"CSV analysis error: {e}")
 
-    st.caption(
-        "The CSV must contain all 423 model input features. "
-        "TransactionID and isFraud are not required as model inputs."
-    )
+        st.caption(
+            "For full-feature predictions, the uploaded CSV must contain "
+            "all 423 model input features. Do not include the isFraud "
+            "target column as an input."
+        )
 
 # --------------------------------------------------
-# 7. RISK ANALYSIS PAGE
+# 8. RISK ANALYSIS PAGE
 # --------------------------------------------------
 
 elif page == "Risk Analysis":
@@ -241,8 +454,8 @@ elif page == "Risk Analysis":
     if "results" not in st.session_state:
 
         st.info(
-            "First upload and analyze transactions from the "
-            "Transaction Detection page."
+            "First enter a transaction or upload a CSV "
+            "from the Transaction Detection page."
         )
 
     else:
@@ -280,21 +493,26 @@ elif page == "Risk Analysis":
         if st.button("Generate SHAP Explanation"):
 
             try:
+
                 with st.spinner("Generating explanation..."):
 
                     explainer = shap.TreeExplainer(model)
 
                     shap_values = explainer.shap_values(
-                        processed_data[selected_index:selected_index + 1]
+                        processed_data[
+                            selected_index:selected_index + 1
+                        ]
                     )
 
                     if isinstance(shap_values, list):
                         values = np.asarray(shap_values[-1])[0]
+
                     else:
                         values = np.asarray(shap_values)
 
                         if values.ndim == 3:
                             values = values[0, :, -1]
+
                         elif values.ndim == 2:
                             values = values[0]
 
@@ -352,12 +570,12 @@ elif page == "Risk Analysis":
                 st.error(f"SHAP explanation error: {e}")
 
         st.caption(
-            "Positive SHAP values push the model toward a fraud prediction; "
-            "negative values push it away. These values are not percentages."
+            "Positive SHAP values push the model toward fraud. "
+            "Negative values push it away. SHAP values are not percentages."
         )
 
 # --------------------------------------------------
-# 8. MODEL INFORMATION PAGE
+# 9. MODEL INFORMATION PAGE
 # --------------------------------------------------
 
 elif page == "Model Information":
@@ -367,11 +585,11 @@ elif page == "Model Information":
     st.subheader("Selected Machine Learning Model")
 
     st.write(
-        "SmartGuard uses a tuned XGBoost classifier for credit card "
-        "fraud detection."
+        "SmartGuard uses a tuned XGBoost classifier "
+        "for credit card fraud detection."
     )
 
-    st.subheader("Preliminary Tuned Model Performance")
+    st.subheader("Preliminary Model Performance")
 
     metrics = pd.DataFrame({
         "Metric": [
@@ -395,16 +613,11 @@ elif page == "Model Information":
     st.dataframe(metrics, hide_index=True)
 
     st.caption(
-        "These are preliminary results from the 20,000-row development "
-        "test sample, not a full-dataset benchmark."
+        "Preliminary results from the 20,000-row development test sample, "
+        "not a full-dataset benchmark."
     )
 
     st.subheader("Financial Loss Estimation")
-
-    st.write(
-        "The following estimates were obtained from the notebook's "
-        "development test sample."
-    )
 
     col1, col2 = st.columns(2)
 
@@ -431,10 +644,8 @@ elif page == "Model Information":
     )
 
     st.warning(
-        "These amounts represent transaction-value estimates, not "
-        "confirmed financial losses. They are based on the development "
-        "test sample and do not represent actual chargebacks or "
-        "investigation costs."
+        "These values are estimates from the development test sample. "
+        "They represent transaction amounts, not confirmed financial losses."
     )
 
     st.subheader("Risk Score Categories")
@@ -449,15 +660,10 @@ elif page == "Model Information":
     )
 
 # --------------------------------------------------
-# 9. FOOTER
+# 10. SIDEBAR FOOTER
 # --------------------------------------------------
 
 st.sidebar.divider()
 
-st.sidebar.caption(
-    "SmartGuard | CSE303 Capstone Project"
-)
-
-st.sidebar.caption(
-    "Machine Learning-Based Fraud Detection"
-)
+st.sidebar.caption("SmartGuard | CSE303 Capstone Project")
+st.sidebar.caption("Machine Learning-Based Fraud Detection")
